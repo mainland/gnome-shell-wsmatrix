@@ -1,6 +1,8 @@
 const Self = imports.misc.extensionUtils.getCurrentExtension();
 const {Clutter, Meta, St} = imports.gi;
 
+const DND = imports.ui.dnd;
+const Main = imports.ui.main;
 const GWorkspaceThumbnail = imports.ui.workspaceThumbnail;
 const WorkspaceThumbnail = Self.imports.workspacePopup.workspaceThumbnail;
 const Util = Self.imports.util;
@@ -11,6 +13,73 @@ var ThumbnailsBox = class {
     constructor() {
         this.originalThumbnailsBox = null;
         this._overrideProperties = {
+            _withinWorkspace(x, y, index, rtl) {
+                const length = this._thumbnails.length;
+                const workspace = this._thumbnails[index];
+
+                let workspaceX1 = workspace.x + GWorkspaceThumbnail.WORKSPACE_CUT_SIZE;
+                let workspaceX2 = workspace.x + workspace.width - GWorkspaceThumbnail.WORKSPACE_CUT_SIZE;
+
+                if (index === length - 1) {
+                    if (rtl)
+                        workspaceX1 -= GWorkspaceThumbnail.WORKSPACE_CUT_SIZE;
+                    else
+                        workspaceX2 += GWorkspaceThumbnail.WORKSPACE_CUT_SIZE;
+                }
+
+                let workspaceY1 = workspace.y;
+                let workspaceY2 = workspace.y + workspace.height;
+
+                return x > workspaceX1 && x <= workspaceX2 && y > workspaceY1 && y <= workspaceY2;
+            },
+
+            // Draggable target interface
+            handleDragOver(source, actor, x, y, time) {
+                if (!source.metaWindow &&
+                    (!source.app || !source.app.can_open_new_window()) &&
+                    (source.app || !source.shellWorkspaceLaunch) &&
+                    source != Main.xdndHandler)
+                    return DND.DragMotionResult.CONTINUE;
+
+                const rtl = Clutter.get_default_text_direction() === Clutter.TextDirection.RTL;
+                let canCreateWorkspaces = Meta.prefs_get_dynamic_workspaces();
+                let spacing = this.get_theme_node().get_length('spacing');
+
+                this._dropWorkspace = -1;
+                let placeholderPos = -1;
+                let length = this._thumbnails.length;
+                for (let i = 0; i < length; i++) {
+                    const index = rtl ? length - i - 1 : i;
+
+                    if (canCreateWorkspaces && source !== Main.xdndHandler) {
+                        const [targetStart, targetEnd] =
+                            this._getPlaceholderTarget(index, spacing, rtl);
+
+                        if (x > targetStart && x <= targetEnd) {
+                            placeholderPos = index;
+                            break;
+                        }
+                    }
+
+                    if (this._withinWorkspace(x, y, index, rtl)) {
+                        this._dropWorkspace = index;
+                        break;
+                    }
+                }
+
+                if (this._dropPlaceholderPos != placeholderPos) {
+                    this._dropPlaceholderPos = placeholderPos;
+                    this.queue_relayout();
+                }
+
+                if (this._dropWorkspace != -1)
+                    return this._thumbnails[this._dropWorkspace].handleDragOverInternal(source, actor, time);
+                else if (this._dropPlaceholderPos != -1)
+                    return source.metaWindow ? DND.DragMotionResult.MOVE_DROP : DND.DragMotionResult.COPY_DROP;
+                else
+                    return DND.DragMotionResult.CONTINUE;
+            },
+
             addThumbnails(start, count) {
                 const { ThumbnailState } = GWorkspaceThumbnail;
                 let workspaceManager = global.workspace_manager;
