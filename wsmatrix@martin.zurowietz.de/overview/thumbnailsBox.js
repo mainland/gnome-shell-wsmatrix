@@ -291,6 +291,14 @@ const vfunc_allocate = function(box) {
     this._indicator.allocate(childBox);
 }
 
+const _activateThumbnailAtPoint = function(stageX, stageY, time) {
+    const [r_, x, y] = this.transform_stage_point(stageX, stageY);
+
+    const thumbnail = this._thumbnails.find(t => x >= t.x && x <= t.x + t.width && y >= t.y && y <= t.y + t.height);
+    if (thumbnail)
+        thumbnail.activate(time);
+}
+
 const _withinWorkspace = function(x, y, index, rtl) {
     const length = this._thumbnails.length;
     const workspace = this._thumbnails[index];
@@ -382,6 +390,12 @@ export default class ThumbnailsBox extends Override {
         this._im.overrideMethod(subject, 'vfunc_allocate', (original) => {
             return function () {
                 return vfunc_allocate.call(this, ...arguments);
+            };
+        });
+
+        this._im.overrideMethod(subject, '_activateThumbnailAtPoint', (original) => {
+            return function () {
+                return _activateThumbnailAtPoint.call(this, ...arguments);
             };
         });
 
